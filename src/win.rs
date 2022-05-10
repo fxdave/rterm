@@ -4,7 +4,7 @@ use crate::color::{
     CURSOR_REV_COLOR_NAME, FG_COLOR_NAME,
 };
 use crate::cursor::CursorMode;
-use crate::font::Font;
+use crate::font::{Font, Xft};
 use crate::glyph::{GlyphAttr, GlyphProp};
 use crate::keymap::map_key;
 use crate::pty::Pty;
@@ -77,6 +77,9 @@ pub struct Win {
     sel_snap: Snap,
     sel_text: Option<String>,
 
+    width: usize,
+    height: usize,
+
     wm_protocols: x11::Atom,
     wm_delete_window: x11::Atom,
     netwmname: x11::Atom,
@@ -97,7 +100,7 @@ impl Win {
         let vis = x11::XDefaultVisual(dpy, scr);
         let root = x11::XRootWindow(dpy, scr);
 
-        let font = font.unwrap_or("monospace");
+        let font = Xft::new(font.unwrap_or("monospace"));
         let font = Font::new(dpy, scr, font)?;
         let (cw, ch) = font.size();
         let ca = font.ascent();
@@ -219,6 +222,9 @@ impl Win {
             old_mouse_x: 0,
             old_mouse_y: 0,
             old_mouse_button: 0,
+
+            width,
+            height,
 
             wm_protocols,
             wm_delete_window,
@@ -537,7 +543,7 @@ impl Win {
         let (ksym, mut len) = x11::XLookupString(xev, &mut buf);
 
         if let Some(function) = find_shortcut(ksym, xev.state) {
-            function.execute(self, term);
+            function.execute(self, term, pty);
             return;
         }
 
@@ -576,8 +582,10 @@ impl Win {
 
     fn configure_notify(&mut self, xev: x11::XEvent, term: &mut Term, pty: &mut Pty) {
         let xev: &x11::XConfigureEvent = x11::cast_event(&xev);
-        let cols = xev.width as usize / self.cw;
-        let rows = xev.height as usize / self.ch;
+        self.width = xev.width as usize;
+        self.height = xev.height as usize;
+        let cols = self.width / self.cw;
+        let rows = self.height as usize / self.ch;
         if !term.resize(cols, rows) {
             return;
         }
@@ -886,6 +894,30 @@ impl Win {
             self.win,
             x11::CURRENT_TIME,
         );
+    }
+
+    pub fn zoom(&mut self, term: &mut Term, pty: &mut Pty, by: i32) {
+        let new_font_result = self.font.get_resized(self.dpy, self.scr, by);
+        match new_font_result {
+            Ok(font) => {
+                self.font = font;
+                let (cw, ch) = self.font.size();
+                self.cw = cw;
+                self.ch = ch;
+                self.ca = self.font.ascent();
+                term.resize(self.width / cw, self.height / ch);
+                pty.resize(self.width / cw, self.height / ch);
+            }
+            Err(error) => {
+                println!("Couldn't zoom in because the font is invalid, {:?}", error)
+            }
+        }
+        for x in 0..term.cols {
+            for y in 0..term.rows {
+                let g = term.get_glyph(x, y, &mut self.glyph_buf);
+                self.draw_cells(&self.glyph_buf, g, x * self.cw, y * self.ch);
+            }
+        }
     }
 
     fn term_write(&mut self, term: &mut Term, pty: &mut Pty, buf: &[u8]) {

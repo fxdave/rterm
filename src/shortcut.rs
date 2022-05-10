@@ -1,3 +1,4 @@
+use crate::pty::Pty;
 use crate::term::Term;
 use crate::win::Win;
 use std::os::raw::*;
@@ -7,12 +8,16 @@ use x11::xlib::*;
 #[derive(Clone, Copy)]
 pub enum Function {
     Paste,
+    ZoomIn,
+    ZoomOut,
 }
 
 impl Function {
-    pub fn execute(&self, win: &mut Win, _term: &mut Term) {
+    pub fn execute(&self, win: &mut Win, term: &mut Term, pty: &mut Pty) {
         match self {
             Function::Paste => win.selection_paste(),
+            Function::ZoomIn => win.zoom(term, pty, 1),
+            Function::ZoomOut => win.zoom(term, pty, -1),
         }
     }
 }
@@ -40,6 +45,8 @@ macro_rules! make_shortcuts {
 const SHORTCUTS: &[Shortcut] = make_shortcuts! {
     /* mask                  keysym          function */
     { ShiftMask,             XK_Insert,      Function::Paste },
+    { ControlMask,           XK_Up,     Function::ZoomIn },
+    { ControlMask,           XK_Down,     Function::ZoomOut },
 };
 
 pub fn find_shortcut(k: KeySym, state: c_uint) -> Option<Function> {

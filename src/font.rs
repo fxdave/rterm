@@ -11,6 +11,7 @@ use std::os::raw::c_int;
 static ASCII_PRINTABLE: &[u8; 95] = b" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
 
 pub struct Font {
+    xft: Xft,
     height: usize,
     width: usize,
     font: x11::XftFont,
@@ -20,8 +21,8 @@ pub struct Font {
 }
 
 impl Font {
-    pub fn new(dpy: x11::Display, scr: c_int, name: &str) -> Result<Self> {
-        let pattern = x11::XftNameParse(name)?;
+    pub fn new(dpy: x11::Display, scr: c_int, xft: Xft) -> Result<Self> {
+        let pattern = x11::XftNameParse(&xft.serialize())?;
 
         let matched = x11::XftFontMatch(dpy, scr, pattern)?;
         let font = x11::XftFontOpenPattern(dpy, matched)?;
@@ -57,8 +58,9 @@ impl Font {
 
         x11::FcPatternDestroy(pattern);
         Ok(Self {
-            height,
+            xft,
             width,
+            height,
             font,
             bfont,
             ifont,
@@ -85,5 +87,66 @@ impl Font {
 
     pub fn ascent(&self) -> usize {
         x11::font_ascent(self.font)
+    }
+
+    pub fn get_resized(&self, dpy: x11::Display, scr: c_int, increment: i32) -> Result<Self> {
+        let new_unsafe_size = self.xft.size as i32 + increment;
+        let new_size = if new_unsafe_size > 0 {
+            new_unsafe_size as usize
+        } else {
+            self.xft.size
+        };
+
+        Self::new(
+            dpy,
+            scr,
+            Xft {
+                name: self.xft.name.clone(),
+                size: new_size,
+            },
+        )
+    }
+}
+
+/// Utility for xft strings like droid:regular:size=12
+pub struct Xft {
+    name: String,
+    pub size: usize,
+}
+
+impl Xft {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: Self::remove_size(name),
+            size: Self::parse_size(name),
+        }
+    }
+
+    pub fn serialize(&self) -> String {
+        self.name.clone() + ":size=" + &self.size.to_string()
+    }
+
+    /// Parse the xft string and gets the size, or a default of 12 if unspecified
+    fn parse_size(name: &str) -> usize {
+        let mut size_found = false;
+        name.split(&['=', ':'])
+            .filter(|section| {
+                let is_it_size = size_found;
+                if section.contains("size") {
+                    size_found = true;
+                }
+                is_it_size
+            })
+            .next()
+            .and_then(|size| size.parse::<usize>().ok())
+            .unwrap_or(12)
+    }
+
+    /// Removes the :size=.. notation
+    fn remove_size(name: &str) -> String {
+        name.split(':')
+            .filter(|section| !section.contains("size="))
+            .collect::<Vec<_>>()
+            .join(":")
     }
 }
