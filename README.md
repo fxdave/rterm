@@ -1,4 +1,6 @@
-rterm
-=====
+# A fork of rterm
+## Changelog
 
-A port of [suckless terminal](https://st.suckless.org/) to rust.
+- Change fonts and colors
+- Add font size increase and decrease feature
+    with CTRL+UP and CTRL+DOWN
