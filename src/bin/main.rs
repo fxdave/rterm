@@ -13,7 +13,7 @@ fn _main() -> Result<()> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
 
     let mut geometry: Option<&str> = None;
-    let mut font: Option<&str> = None;
+    let mut font: Option<&str> = Some("Droid Sans Mono for Powerline");
     let mut log: Option<&str> = None;
 
     let mut i = 1;
